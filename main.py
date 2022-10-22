@@ -7,23 +7,25 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_curve, auc, confusion_matrix
 import numpy as np
+#import cupy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestRegressor
-import keras_tuner as kt
+#from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
+#import keras_tuner as kt
 import time
 import os
 from math import sqrt
 
-#os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-#os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  ##
+# os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async' ##
 policy = keras.mixed_precision.Policy('mixed_float16')
-#keras.mixed_precision.set_global_policy(policy)
+# keras.mixed_precision.set_global_policy(policy) ##
 print('Compute dtype: %s' % policy.compute_dtype)
 print('Variable dtype: %s' % policy.variable_dtype)
 
-class SequentialModel(kt.HyperModel):
+class SequentialModel():  #kt.HyperModel):
     cvscores = []
     modelscores = []
     predictions = []
@@ -46,24 +48,32 @@ class SequentialModel(kt.HyperModel):
         self.name = "Seq"
         self.lineformat = '-'
 
-    def build(self, hp):
+    def build(self): #, hp):
         """Builds a Sequential model."""
 
         inputs = keras.Input(self.input_shape)    #shape=(28, 28, 1))
         x = keras.layers.Flatten()(inputs)
         ###hpunits=hp.Choice("units", [40, 140, 90])   ### 32, 64, 128
-        hpunits=[40, 140, 90]   ### 32, 64, 128
+        hpunits=[30,70,80,90] #[60,140] ### [40, 140, 90]   ### 32, 64, 128
         x = keras.layers.Dense(units=hpunits[0], activation="relu")(x)
         x = keras.layers.Dense(units=hpunits[1], activation="relu")(x)
         x = keras.layers.Dense(units=hpunits[2], activation="relu")(x)
+        x = keras.layers.Dense(units=hpunits[3], activation="relu")(x)
         print("Added keras layers with units",hpunits)
+
+        #model.add(layers.Dropout(rate=0.25))
+        #x = keras.layers.Dropout(rate=0.25)(x)
+        print("NOT Added keras Dropout layer",hpunits)
+        
         outputs = keras.layers.Dense(1, activation='sigmoid')(x)
 
         # model.add(Dense(1, activation='sigmoid'))
 
         self.model = keras.Model(inputs=inputs, outputs=outputs)
 
-        self.model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        opt = keras.optimizers.Adam(learning_rate=0.01)
+
+        self.model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
 
         return self.model
 
@@ -105,15 +115,15 @@ class SequentialModel(kt.HyperModel):
 
     def fitmodel(self,X,Y,vd,cb):
         self.history_callback = self.model.fit(X, Y,
-                  epochs=510,
+                  epochs=1510,
                   batch_size=256,
-                  verbose=10,
+                  verbose=2,
                   validation_data=vd,
                   callbacks=[cb])
 
         return self.history_callback
 
-class RandomForestRegressorModel(kt.HyperModel):
+class RandomForestRegressorModel(): #kt.HyperModel):
     cvscores = []
     modelscores = []
     predictions = []
@@ -134,8 +144,9 @@ class RandomForestRegressorModel(kt.HyperModel):
         self.name = "RF"
         self.lineformat = '--'
 
-    def build(self, hp):
-        self.model = RandomForestRegressor(n_estimators=20, random_state=0)
+    def build(self): #, hp):
+        #self.model = RandomForestRegressor(n_estimators=20, random_state=0)
+        self.model = RandomForestClassifier(n_estimators=20, random_state=0)
         return self.model
     def fitmodel(self,X,Y,vd=[],cb=[]):
         self.model.fit(X, Y)
@@ -170,7 +181,7 @@ class RandomForestRegressorModel(kt.HyperModel):
         self.sp_history.append(sp)
         self.sn_history.append(sn)
 
-class GradientBoostingClassifierModel(kt.HyperModel):
+class GradientBoostingClassifierModel(): #kt.HyperModel):
     cvscores = []
     modelscores = []
     predictions = []
@@ -191,7 +202,7 @@ class GradientBoostingClassifierModel(kt.HyperModel):
         self.name = "GB"
         self.lineformat = ':'
 
-    def build(self, hp):
+    def build(self): #, hp):
         self.model = GradientBoostingClassifier()
         #_estimators=20, random_state=0)
         return self.model
@@ -229,7 +240,7 @@ class GradientBoostingClassifierModel(kt.HyperModel):
         self.sn_history.append(sn)
 
 
-class SVMModel(kt.HyperModel):
+class SVMModel(): #kt.HyperModel):
     cvscores = []
     modelscores = []
     predictions = []
@@ -252,7 +263,7 @@ class SVMModel(kt.HyperModel):
         self.lineformat = ':'
 
 
-    def build(self, hp):
+    def build(self): #, hp):
         self.model = SVC(kernel='linear')
         return self.model
     def fitmodel(self,X,Y,vd=[],cb=[]):
@@ -339,7 +350,7 @@ for train, test in kfold.split(X, Y):
     # k += 1
 
     # create model
-    inithp = kt.HyperParameters()
+    #inithp = kt.HyperParameters()
 
     #hypermodel[0] = SVMModel()
     #model = hypermodel[0].build(inithp)
@@ -347,13 +358,13 @@ for train, test in kfold.split(X, Y):
     input_shape = (X[train].shape[1],)
 
     hypermodel[1] = SequentialModel(input_shape)
-    model = hypermodel[1].build(inithp)
+    model = hypermodel[1].build() #inithp)
 
     hypermodel[2] = RandomForestRegressorModel()
-    model = hypermodel[2].build(inithp)
+    model = hypermodel[2].build() #inithp)
 
     hypermodel[0] = GradientBoostingClassifierModel()
-    model = hypermodel[0].build(inithp)
+    model = hypermodel[0].build() #inithp)
 
     # Fit the model
     history_callback = hypermodel[1].fitmodel(X[train], Y[train],(X[test], Y[test]),cb)
